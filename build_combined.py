@@ -838,7 +838,6 @@ UPSTREAM_X_LIST_ORDER = [
     "NewX: Customize inline actions",
     "NewX: Inline download button",
     "NewX: Redirect downloads to chosen folder",
-    "NewX: Log HLS audio renditions",
     "NewX: Customize media menu items",
     "NewX: Set default media tab",
     "NewX: Gallery profile Photos tab",
