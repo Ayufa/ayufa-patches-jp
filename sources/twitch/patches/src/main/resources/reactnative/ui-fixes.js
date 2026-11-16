@@ -7,6 +7,10 @@
     //   frame it ever fetched. Preview URLs get a cache key that rolls over
     //   on the same 5-minute cadence the preview CDN itself uses
     //   (Cache-Control: max-age=300), so visible previews reload fresh art.
+    //   The key is applied at every layer that touches the URL: the shared
+    //   getStreamThumbnailUrl helper (the home/following feed renders its
+    //   result through React Native's own Image, not CoreImage) and the
+    //   CoreImage component used by the remaining surfaces.
     // - Chat shows a "reconnecting" snackbar but never confirms recovery.
     //   The connection-state hook is wrapped to post the matching
     //   "reconnected" snackbar when a disconnected episode ends.
@@ -15,6 +19,13 @@
     function bustPreview(url, now) {
         return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + previewBucket(now);
     }
+    runtime.target(__TWITCH_THUMBNAIL_URL_MODULE__, 'getStreamThumbnailUrl', function (original) {
+        return function () {
+            var url = original.apply(this, arguments);
+            return typeof url === 'string' && url.indexOf('/previews-ttv/') >= 0 ?
+                bustPreview(url, Date.now()) : url;
+        };
+    });
     runtime.target(__TWITCH_CORE_IMAGE_MODULE__, 'CoreImage', function (original, React) {
         return function (props) {
             var src = props ? props.src : null;

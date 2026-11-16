@@ -40,6 +40,7 @@ function loadAdapters(sandbox) {
     const runtime = {target(id, name, factory) { adapters[name] = factory; }};
     const source = fs.readFileSync(path.resolve(__dirname,
         '../../patches/src/main/resources/reactnative/ui-fixes.js'), 'utf8')
+        .replace('__TWITCH_THUMBNAIL_URL_MODULE__', '100')
         .replace('__TWITCH_CORE_IMAGE_MODULE__', '101')
         .replace('__TWITCH_CHAT_CONNECTION_MODULE__', '102')
         .replace('__TWITCH_SNACKBAR_MODULE__', '777');
@@ -87,6 +88,27 @@ test('CoreImage refreshes only stream preview URLs on the CDN cadence', () => {
     for (const fn of [...timers.values()]) fn();
     const rolled = React.render(render, preview);
     assert.equal(rolled.props.src, preview.src + '?v=42', 'the URL rolls over with the bucket');
+});
+
+test('getStreamThumbnailUrl cache-busts only preview URLs', () => {
+    let now = 300000 * 41 + 1000;
+    const adapters = loadAdapters({Date: {now: () => now}});
+    const preview = 'https://static-cdn.jtvnw.net/previews-ttv/live_user_x-440x248.jpg';
+    const original = function (stream, vertical) {
+        return vertical ? preview.replace('440x248', '248x440') : preview;
+    };
+    const wrapped = adapters.getStreamThumbnailUrl(original);
+    assert.equal(wrapped({}, false), preview + '?v=41');
+    assert.equal(wrapped({}, true), preview.replace('440x248', '248x440') + '?v=41',
+        'the vertical variant is busted too');
+    now += 300000;
+    assert.equal(wrapped({}, false), preview + '?v=42', 'the key rolls over with the bucket');
+
+    const other = adapters.getStreamThumbnailUrl(() => 'https://static-cdn.jtvnw.net/ttv-boxart/123-285x380.jpg');
+    assert.equal(other({}, false), 'https://static-cdn.jtvnw.net/ttv-boxart/123-285x380.jpg',
+        'non-preview URLs pass through untouched');
+    const empty = adapters.getStreamThumbnailUrl(() => undefined);
+    assert.equal(empty({}, false), undefined, 'missing URLs pass through untouched');
 });
 
 test('chat connection hook posts one reconnected snackbar per recovered episode', () => {
