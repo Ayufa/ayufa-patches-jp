@@ -42,6 +42,8 @@ function loadAdapters(sandbox) {
         '../../patches/src/main/resources/reactnative/ui-fixes.js'), 'utf8')
         .replace('__TWITCH_THUMBNAIL_URL_MODULE__', '100')
         .replace('__TWITCH_CORE_IMAGE_MODULE__', '101')
+        .replace('__TWITCH_FOLLOWING_THUMBNAIL_MODULE__', '103')
+        .replace('__TWITCH_SKYLINE_BACKGROUND_MODULE__', '104')
         .replace('__TWITCH_CHAT_CONNECTION_MODULE__', '102')
         .replace('__TWITCH_SNACKBAR_MODULE__', '777');
     vm.runInNewContext(source, Object.assign({globalThis: {__twitchPatchRuntime: runtime}}, sandbox));
@@ -109,6 +111,48 @@ test('getStreamThumbnailUrl cache-busts only preview URLs', () => {
         'non-preview URLs pass through untouched');
     const empty = adapters.getStreamThumbnailUrl(() => undefined);
     assert.equal(empty({}, false), undefined, 'missing URLs pass through untouched');
+});
+
+test('preview prop components cache-bust previewImageURL props', () => {
+    let now = 300000 * 41 + 1000;
+    const timers = new Map();
+    let nextTimer = 1;
+    const adapters = loadAdapters({
+        Date: {now: () => now},
+        setInterval(fn) { const id = nextTimer++; timers.set(id, fn); return id; },
+        clearInterval(id) { timers.delete(id); }
+    });
+    const React = createReact();
+    function Thumb() {}
+    const preview = 'https://static-cdn.jtvnw.net/previews-ttv/live_user_x-440x248.jpg';
+    const vertical = 'https://static-cdn.jtvnw.net/previews-ttv/live_user_x-248x440.jpg';
+
+    for (const name of ['FollowingRowThumbnail', 'SkylineThumbnailBackground']) {
+        React.reset();
+        timers.clear();
+        const render = adapters[name](Thumb, React);
+        const props = {previewImageURL: preview, verticalPreviewImageURL: vertical, width: 440};
+        const first = React.render(render, props);
+        assert.equal(first.type, Thumb);
+        assert.equal(first.props.previewImageURL, preview + '?v=41', name);
+        assert.equal(first.props.verticalPreviewImageURL, vertical + '?v=41', name);
+        assert.equal(first.props.width, 440);
+        assert.notEqual(first.props, props, 'props are copied, not mutated');
+        assert.equal(props.previewImageURL, preview);
+        assert.equal(timers.size, 1, 'a mounted preview polls for the next cadence boundary');
+        now += 300000;
+        for (const fn of [...timers.values()]) fn();
+        const rolled = React.render(render, props);
+        assert.equal(rolled.props.previewImageURL, preview + '?v=42', name + ' rolls over');
+        now -= 300000;
+    }
+
+    React.reset();
+    const render = adapters.FollowingRowThumbnail(Thumb, React);
+    const boxArt = {previewImageURL: 'https://static-cdn.jtvnw.net/ttv-boxart/123-285x380.jpg'};
+    assert.equal(React.render(render, boxArt).props, boxArt, 'non-preview props pass through by identity');
+    const empty = {};
+    assert.equal(React.render(render, empty).props, empty, 'missing URLs pass through by identity');
 });
 
 test('chat connection hook posts one reconnected snackbar per recovered episode', () => {

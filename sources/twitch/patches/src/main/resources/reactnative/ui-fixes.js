@@ -9,8 +9,11 @@
     //   (Cache-Control: max-age=300), so visible previews reload fresh art.
     //   The key is applied at every layer that touches the URL: the shared
     //   getStreamThumbnailUrl helper (the home/following feed renders its
-    //   result through React Native's own Image, not CoreImage) and the
-    //   CoreImage component used by the remaining surfaces.
+    //   result through React Native's own Image, not CoreImage), the
+    //   CoreImage component used by some surfaces, and the components that
+    //   receive the preview URL as a prop and render it through React
+    //   Native's Image themselves (the following list, the skyline
+    //   backdrop), whose props are busted at the component boundary.
     // - Chat shows a "reconnecting" snackbar but never confirms recovery.
     //   The connection-state hook is wrapped to post the matching
     //   "reconnected" snackbar when a disconnected episode ends.
@@ -52,6 +55,35 @@
             return React.createElement(original, Object.assign({}, props, {src: nextSrc}));
         };
     });
+    function bustPreviewProps(original, React) {
+        return function (props) {
+            var url = props ? props.previewImageURL : null;
+            var vertical = props ? props.verticalPreviewImageURL : null;
+            var bustUrl = typeof url === 'string' && url.indexOf('/previews-ttv/') >= 0;
+            var bustVertical = typeof vertical === 'string' && vertical.indexOf('/previews-ttv/') >= 0;
+            var active = bustUrl || bustVertical;
+            var setTick = React.useState(0)[1];
+            React.useEffect(function () {
+                if (!active) return undefined;
+                var last = previewBucket(Date.now());
+                var timer = setInterval(function () {
+                    var next = previewBucket(Date.now());
+                    if (next !== last) {
+                        last = next;
+                        setTick(function (count) { return count + 1; });
+                    }
+                }, 30000);
+                return function () { clearInterval(timer); };
+            }, [active, url, vertical]);
+            if (!active) return React.createElement(original, props);
+            var next = Object.assign({}, props);
+            if (bustUrl) next.previewImageURL = bustPreview(url, Date.now());
+            if (bustVertical) next.verticalPreviewImageURL = bustPreview(vertical, Date.now());
+            return React.createElement(original, next);
+        };
+    }
+    runtime.target(__TWITCH_FOLLOWING_THUMBNAIL_MODULE__, 'FollowingRowThumbnail', bustPreviewProps);
+    runtime.target(__TWITCH_SKYLINE_BACKGROUND_MODULE__, 'SkylineThumbnailBackground', bustPreviewProps);
     runtime.target(__TWITCH_CHAT_CONNECTION_MODULE__, 'useChatConnectionState', function (original, React, runtime, require) {
         var useSnackbar = require(__TWITCH_SNACKBAR_MODULE__).useSnackbar;
         return function () {

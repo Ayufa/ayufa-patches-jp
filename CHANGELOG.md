@@ -2,6 +2,12 @@
 
 このプロジェクトのバージョンは、バンドル全体に対する独立したセマンティックバージョニング（`vX.Y.Z`）で管理します。上流（crimera/piko、ryykitty/twitch-patched）のバージョンとは連動しません。方針は [docs/UPSTREAM.md](docs/UPSTREAM.md) を参照してください。
 
+## [1.5.7] - 2026-11-16
+
+### 修正
+
+- Twitch: サムネイル対策がフォロー一覧に効いていなかった問題を修正。「UI settings」パッチの常時修正に、プレビュー URL を props で受け取って React Native 標準の Image で直接描く部品（フォロー一覧の `FollowingRowThumbnail` とホーム背景の `SkylineThumbnailBackground`）の props 境界でのキャッシュキー付け替えを追加しました。この2部品は共有ヘルパーも CoreImage も経由しないため、従来の対策（v1.5.4〜v1.5.6）が一度も届いていませんでした。
+
 ## [1.5.6] - 2026-11-16
 
 - Twitch 側: **v1.5.5 で「UI settings」パッチが失敗する不具合を修正**。サムネイル用ヘルパー（`getStreamThumbnailUrl`）の解決時に引数の個数の指定が不足していました。パッチ処理がエラーで止まってしまう問題で、v1.5.5 で Twitch に当てていた方はこの版で当て直してください。

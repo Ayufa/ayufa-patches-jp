@@ -31,12 +31,18 @@ internal val uiSettingsAssetsPatch = resourcePatch {
             .replace("__TWITCH_UI_NATIVE_MODULE__", native.toString()))
         val thumbnailUrl = exports.resolve("getStreamThumbnailUrl",
             setOf("previewImageURL", "previewImageURLVertical"), params = 3)
+        val followingThumbnail = exports.resolve("FollowingRowThumbnail",
+            setOf("previewImageURL", "verticalPreviewImageURL"), params = 2)
+        val skylineBackground = exports.resolve("SkylineThumbnailBackground",
+            setOf("previewImageURL"), params = 2)
         val coreImage = exports.resolve("CoreImage", setOf("src", "resizeMode", "fadeDuration"))
         val chatConnection = exports.resolve("useChatConnectionState",
             setOf("useChatSelector", "useSnackbar", "addSnackbar"))
         val snackbar = exports.resolve("useSnackbar", setOf("useContext"), params = 1)
         get(RN_ASSET).appendText("\n" + assetSource("ui-fixes.js")
             .replace("__TWITCH_THUMBNAIL_URL_MODULE__", thumbnailUrl.module.toString())
+            .replace("__TWITCH_FOLLOWING_THUMBNAIL_MODULE__", followingThumbnail.module.toString())
+            .replace("__TWITCH_SKYLINE_BACKGROUND_MODULE__", skylineBackground.module.toString())
             .replace("__TWITCH_CORE_IMAGE_MODULE__", coreImage.module.toString())
             .replace("__TWITCH_CHAT_CONNECTION_MODULE__", chatConnection.module.toString())
             .replace("__TWITCH_SNACKBAR_MODULE__", snackbar.module.toString()))
