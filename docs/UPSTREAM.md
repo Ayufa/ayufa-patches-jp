@@ -48,6 +48,7 @@
   6. 取り込みコミットには規約型 `i18n` を使います。
 - 例外: Ayufa 独自パッチ「Ayufa: Startup tab」（v1.3.0 で追加）は本家に無い、こちら側のオリジナルです。実体は `sources/twitch/patches/.../twitch/startup/` と `sources/twitch/extensions/.../extension/startup/`、設定セクション `SettingSection.AYUFA`。本家の取り込みで削除したり、本家の流儀に寄せて改名したりしないでください。`EXPECTED_PATCHES` の Twitch 側に本家に無い名前が1件あるのは正常です。名前は恒久ルールどおり英語のまま（実行順序は名前で決まるため）、説明と UI は日本語、初期状態は未選択（default = false）です。
 - このパッチのフックは、文字列 `default_home_page` を読んで既定のホームページ（フォロー／ライブ／クリップ）を返すメソッド（31.8.0 では難読化名 tnk.b）の戻り値です。起動時の遷移は常にこのメソッドからページを明示的に渡すため、v1.3.0 の方式（画面の引数が無い場合の既定値を差し替え）は実フローで発火せず、v1.3.1 で現行方式に改めました。本家の実験（default_home_page）が終了・変更されるとこのフックは合わなくなる可能性があります。その場合はパッチ側だけが適用失敗になるので、本家取り込みとは切り分けて報告してください。
+- 例外（常時有効の修正）: `sources/twitch/patches/src/main/resources/reactnative/ui-fixes.js`（v1.5.4 で追加、本人の指示による）は本家に無いこちら側の修正で、新規パッチや設定項目にはせず「UI settings」パッチの実行時に常時組み込まれます。内容は2件: (1) 配信プレビューのサムネイルが更新されない問題の修正（チャンネルごとのプレビューURLが不変で画像キャッシュが永久に残るため、`CoreImage` のラッパーが `/previews-ttv/` の URL にだけ CDN の max-age=300 と同じ5分周期のキャッシュキーを付け、表示中は周期境界で再描画する）、(2) チャット再接続時に「チャットに再接続しました」のスナックバーを追加（`useChatConnectionState` のラッパーが切断→接続の遷移で、本家が再接続中に使うのと同じ形式のスナックバーを出す）。フック解決は `UiSettingsAssets.kt` 側（CoreImage / useChatConnectionState / useSnackbar の Metro エクスポート解決）。本家の取り込みで削除したり設定項目化したりしないでください。本家が同等機能を実装したら、その時点で本人に報告して扱いを決めます。検証テストは `sources/twitch/scripts/tests/react-native-ui-fixes.test.cjs`。
 
 ## LINE 側: sources/line/
 
