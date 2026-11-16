@@ -30,7 +30,7 @@ internal val uiSettingsAssetsPatch = resourcePatch {
             .replace("__TWITCH_UI_CHAT_SETTINGS_MODULE__", chat.module.toString())
             .replace("__TWITCH_UI_NATIVE_MODULE__", native.toString()))
         val thumbnailUrl = exports.resolve("getStreamThumbnailUrl",
-            setOf("previewImageURL", "previewImageURLVertical"))
+            setOf("previewImageURL", "previewImageURLVertical"), params = 3)
         val coreImage = exports.resolve("CoreImage", setOf("src", "resizeMode", "fadeDuration"))
         val chatConnection = exports.resolve("useChatConnectionState",
             setOf("useChatSelector", "useSnackbar", "addSnackbar"))
