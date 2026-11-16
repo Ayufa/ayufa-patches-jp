@@ -36,16 +36,24 @@ internal val uiSettingsAssetsPatch = resourcePatch {
         val skylineBackground = exports.resolve("SkylineThumbnailBackground",
             setOf("previewImageURL"), params = 2)
         val coreImage = exports.resolve("CoreImage", setOf("src", "resizeMode", "fadeDuration"))
-        val chatConnection = exports.resolve("useChatConnectionState",
-            setOf("useChatSelector", "useSnackbar", "addSnackbar"))
-        val snackbar = exports.resolve("useSnackbar", setOf("useContext"), params = 1)
+        val chatReconnectingLine = exports.resolve("ChatReconnectingLine",
+            setOf("StatusLine"), params = 2)
+        val chatDisconnectedLine = exports.resolve("ChatDisconnectedLine",
+            setOf("StatusLine"), params = 2)
+        val chatConnectedLine = exports.resolve("ChatConnectedLine",
+            setOf("event", "channelLogin", "StatusLine"), params = 2)
+        val statusLine = exports.resolve("StatusLine", setOf("children", "testID"), params = 2)
+        val coreText = exports.resolve("CoreText", setOf("color", "children"), params = 2)
         get(RN_ASSET).appendText("\n" + assetSource("ui-fixes.js")
             .replace("__TWITCH_THUMBNAIL_URL_MODULE__", thumbnailUrl.module.toString())
             .replace("__TWITCH_FOLLOWING_THUMBNAIL_MODULE__", followingThumbnail.module.toString())
             .replace("__TWITCH_SKYLINE_BACKGROUND_MODULE__", skylineBackground.module.toString())
             .replace("__TWITCH_CORE_IMAGE_MODULE__", coreImage.module.toString())
-            .replace("__TWITCH_CHAT_CONNECTION_MODULE__", chatConnection.module.toString())
-            .replace("__TWITCH_SNACKBAR_MODULE__", snackbar.module.toString()))
+            .replace("__TWITCH_CHAT_RECONNECTING_LINE_MODULE__", chatReconnectingLine.module.toString())
+            .replace("__TWITCH_CHAT_DISCONNECTED_LINE_MODULE__", chatDisconnectedLine.module.toString())
+            .replace("__TWITCH_CHAT_CONNECTED_LINE_MODULE__", chatConnectedLine.module.toString())
+            .replace("__TWITCH_STATUS_LINE_MODULE__", statusLine.module.toString())
+            .replace("__TWITCH_CORE_TEXT_MODULE__", coreText.module.toString()))
         appendUiControls(bundle)
         prepareUiViewResources()
         validateUiPlayerLayout(get("res/layout/stream_settings_fragment.xml").readText())

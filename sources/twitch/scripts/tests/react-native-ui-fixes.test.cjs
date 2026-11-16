@@ -7,7 +7,8 @@ const vm = require('node:vm');
 function createReact() {
     let hooks = [], index = 0;
     const React = {
-        createElement(type, props) { return {type, props}; },
+        Fragment: Symbol('Fragment'),
+        createElement(type, props, ...children) { return {type, props, children}; },
         useRef(initial) {
             const slot = index++;
             if (!hooks[slot]) hooks[slot] = {current: initial};
@@ -44,8 +45,11 @@ function loadAdapters(sandbox) {
         .replace('__TWITCH_CORE_IMAGE_MODULE__', '101')
         .replace('__TWITCH_FOLLOWING_THUMBNAIL_MODULE__', '103')
         .replace('__TWITCH_SKYLINE_BACKGROUND_MODULE__', '104')
-        .replace('__TWITCH_CHAT_CONNECTION_MODULE__', '102')
-        .replace('__TWITCH_SNACKBAR_MODULE__', '777');
+        .replace('__TWITCH_CHAT_RECONNECTING_LINE_MODULE__', '105')
+        .replace('__TWITCH_CHAT_DISCONNECTED_LINE_MODULE__', '106')
+        .replace('__TWITCH_CHAT_CONNECTED_LINE_MODULE__', '107')
+        .replace('__TWITCH_STATUS_LINE_MODULE__', '108')
+        .replace('__TWITCH_CORE_TEXT_MODULE__', '109');
     vm.runInNewContext(source, Object.assign({globalThis: {__twitchPatchRuntime: runtime}}, sandbox));
     return adapters;
 }
@@ -155,45 +159,48 @@ test('preview prop components cache-bust previewImageURL props', () => {
     assert.equal(React.render(render, empty).props, empty, 'missing URLs pass through by identity');
 });
 
-test('chat connection hook posts one reconnected snackbar per recovered episode', () => {
+test('chat lines add a reconnected status line only after a reconnect episode', () => {
     const adapters = loadAdapters({});
     const React = createReact();
-    const posted = [];
-    const snackbar = {addSnackbar(payload) { posted.push(payload); }};
+    function StatusLine() {}
+    function CoreText() {}
+    function ConnectedLine() {}
+    function ReconnectingLine() {}
+    function DisconnectedLine() {}
     const requireStub = (id) => {
-        assert.equal(id, 777);
-        return {useSnackbar: () => snackbar};
+        if (id === 108) return {StatusLine};
+        if (id === 109) return {CoreText};
+        throw new Error('unexpected require ' + id);
     };
-    let state = {connected: true, disconnectedSettled: false, onSendWhileDisconnected: null};
-    const original = function () { return state; };
-    const hook = adapters.useChatConnectionState(original, React, {}, requireStub);
-    const expected = {message: 'チャットに再接続しました', type: 'info', fullWidth: true, duration: 3000};
+    const connected = adapters.ChatConnectedLine(ConnectedLine, React, {}, requireStub);
+    const reconnecting = adapters.ChatReconnectingLine(ReconnectingLine, React);
+    const disconnected = adapters.ChatDisconnectedLine(DisconnectedLine, React);
+    const props = {event: {channelLogin: 'fps_shaka'}};
 
-    assert.equal(React.render(hook, {}), state, 'state passes through by identity');
-    assert.deepEqual(JSON.parse(JSON.stringify(posted)), [], 'the initial connect stays silent');
+    const firstJoin = React.render(connected, props);
+    assert.equal(firstJoin.type, ConnectedLine, 'the first join renders the welcome line alone');
+    assert.equal(firstJoin.props, props);
 
-    state = {...state, connected: false};
-    React.render(hook, {});
-    assert.deepEqual(JSON.parse(JSON.stringify(posted)), [], 'dropping the connection posts nothing');
+    const reconnectingElement = React.render(reconnecting, props);
+    assert.equal(reconnectingElement.type, ReconnectingLine, 'the reconnecting line passes through');
 
-    state = {...state, connected: true};
-    React.render(hook, {});
-    assert.deepEqual(JSON.parse(JSON.stringify(posted)), [expected], 'recovery posts the reconnected snackbar once');
+    const recovered = React.render(connected, props);
+    assert.equal(recovered.type, React.Fragment, 'recovery renders the welcome line plus a notice');
+    assert.equal(recovered.children.length, 2);
+    assert.equal(recovered.children[0].type, ConnectedLine);
+    const notice = recovered.children[1];
+    assert.equal(notice.type, StatusLine);
+    assert.equal(notice.props.testID, 'chat-reconnected-line');
+    assert.equal(notice.children.length, 1);
+    assert.equal(notice.children[0].type, CoreText);
+    assert.equal(notice.children[0].props.color, 'alt-2');
+    assert.deepEqual([...notice.children[0].children], ['チャットに再接続しました']);
 
-    React.render(hook, {});
-    assert.deepEqual(JSON.parse(JSON.stringify(posted)), [expected], 'steady state does not repeat it');
+    const steady = React.render(connected, props);
+    assert.equal(steady.type, ConnectedLine, 'the notice appears once per episode');
 
-    state = {...state, connected: false};
-    React.render(hook, {});
-    state = {...state, connected: true};
-    React.render(hook, {});
-    assert.deepEqual(JSON.parse(JSON.stringify(posted)), [expected, expected], 'a second episode posts it again');
-
-    React.reset();
-    state = {...state, connected: false};
-    React.render(hook, {});
-    assert.equal(posted.length, 2, 'entering while disconnected posts nothing yet');
-    state = {...state, connected: true};
-    React.render(hook, {});
-    assert.equal(posted.length, 3, 'the entry handshake completing posts it');
+    React.render(disconnected, props);
+    const recoveredAgain = React.render(connected, props);
+    assert.equal(recoveredAgain.type, React.Fragment, 'a disconnected line also arms the notice');
+    assert.equal(recoveredAgain.children[1].children[0].children[0], 'チャットに再接続しました');
 });

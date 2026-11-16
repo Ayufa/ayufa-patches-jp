@@ -14,9 +14,13 @@
     //   receive the preview URL as a prop and render it through React
     //   Native's Image themselves (the following list, the skyline
     //   backdrop), whose props are busted at the component boundary.
-    // - Chat shows a "reconnecting" snackbar but never confirms recovery.
-    //   The connection-state hook is wrapped to post the matching
-    //   "reconnected" snackbar when a disconnected episode ends.
+    // - The chat line list shows a "Reconnecting to chat..." line while the
+    //   connection is down, but nothing marks the recovery itself (the
+    //   "Welcome to the chat room!" line is the same one shown on the first
+    //   join). When a connected line follows a reconnecting or disconnected
+    //   line, a matching "reconnected" status line is rendered right after
+    //   it, built from the same StatusLine and CoreText pieces and styling
+    //   the app's own chat lines use.
     var PREVIEW_BUCKET_MS = 300000;
     function previewBucket(now) { return Math.floor(now / PREVIEW_BUCKET_MS); }
     function bustPreview(url, now) {
@@ -84,21 +88,26 @@
     }
     runtime.target(__TWITCH_FOLLOWING_THUMBNAIL_MODULE__, 'FollowingRowThumbnail', bustPreviewProps);
     runtime.target(__TWITCH_SKYLINE_BACKGROUND_MODULE__, 'SkylineThumbnailBackground', bustPreviewProps);
-    runtime.target(__TWITCH_CHAT_CONNECTION_MODULE__, 'useChatConnectionState', function (original, React, runtime, require) {
-        var useSnackbar = require(__TWITCH_SNACKBAR_MODULE__).useSnackbar;
-        return function () {
-            var state = original.apply(this, arguments);
-            var snackbar = useSnackbar();
-            var seen = React.useRef(null);
-            var addSnackbar = snackbar ? snackbar.addSnackbar : null;
-            var connected = state ? state.connected : undefined;
-            React.useEffect(function () {
-                var was = seen.current;
-                seen.current = connected;
-                if (was === false && connected === true && typeof addSnackbar === 'function')
-                    addSnackbar({message: 'チャットに再接続しました', type: 'info', fullWidth: true, duration: 3000});
-            }, [connected, addSnackbar]);
-            return state;
+    var chatRecoveryPending = false;
+    function markChatRecoveryPending(original, React) {
+        return function (props) {
+            chatRecoveryPending = true;
+            return React.createElement(original, props);
+        };
+    }
+    runtime.target(__TWITCH_CHAT_RECONNECTING_LINE_MODULE__, 'ChatReconnectingLine', markChatRecoveryPending);
+    runtime.target(__TWITCH_CHAT_DISCONNECTED_LINE_MODULE__, 'ChatDisconnectedLine', markChatRecoveryPending);
+    runtime.target(__TWITCH_CHAT_CONNECTED_LINE_MODULE__, 'ChatConnectedLine', function (original, React, runtime, require) {
+        return function (props) {
+            var connected = React.createElement(original, props);
+            if (!chatRecoveryPending) return connected;
+            chatRecoveryPending = false;
+            var StatusLine = require(__TWITCH_STATUS_LINE_MODULE__).StatusLine;
+            var CoreText = require(__TWITCH_CORE_TEXT_MODULE__).CoreText;
+            if (typeof StatusLine !== 'function' || typeof CoreText !== 'function') return connected;
+            var notice = React.createElement(StatusLine, {testID: 'chat-reconnected-line'},
+                React.createElement(CoreText, {color: 'alt-2'}, 'チャットに再接続しました'));
+            return React.createElement(React.Fragment, null, connected, notice);
         };
     });
 })(globalThis.__twitchPatchRuntime);
