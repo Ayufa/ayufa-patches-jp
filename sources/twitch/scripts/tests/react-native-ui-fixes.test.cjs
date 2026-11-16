@@ -185,10 +185,10 @@ test('chat lines add a reconnected status line only after a reconnect episode', 
     assert.equal(reconnectingElement.type, ReconnectingLine, 'the reconnecting line passes through');
 
     const recovered = React.render(connected, props);
-    assert.equal(recovered.type, React.Fragment, 'recovery renders the welcome line plus a notice');
+    assert.equal(recovered.type, React.Fragment, 'recovery renders a notice plus the welcome line');
     assert.equal(recovered.children.length, 2);
-    assert.equal(recovered.children[0].type, ConnectedLine);
-    const notice = recovered.children[1];
+    assert.equal(recovered.children[1].type, ConnectedLine, 'the welcome line comes after the notice');
+    const notice = recovered.children[0];
     assert.equal(notice.type, StatusLine);
     assert.equal(notice.props.testID, 'chat-reconnected-line');
     assert.equal(notice.children.length, 1);
@@ -202,5 +202,5 @@ test('chat lines add a reconnected status line only after a reconnect episode', 
     React.render(disconnected, props);
     const recoveredAgain = React.render(connected, props);
     assert.equal(recoveredAgain.type, React.Fragment, 'a disconnected line also arms the notice');
-    assert.equal(recoveredAgain.children[1].children[0].children[0], 'チャットに再接続しました');
+    assert.equal(recoveredAgain.children[0].children[0].children[0], 'チャットに再接続しました');
 });

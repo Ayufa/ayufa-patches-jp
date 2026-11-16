@@ -18,9 +18,10 @@
     //   connection is down, but nothing marks the recovery itself (the
     //   "Welcome to the chat room!" line is the same one shown on the first
     //   join). When a connected line follows a reconnecting or disconnected
-    //   line, a matching "reconnected" status line is rendered right after
+    //   line, a matching "reconnected" status line is rendered right before
     //   it, built from the same StatusLine and CoreText pieces and styling
-    //   the app's own chat lines use.
+    //   the app's own chat lines use, so the list reads: reconnecting,
+    //   reconnected, welcome.
     var PREVIEW_BUCKET_MS = 300000;
     function previewBucket(now) { return Math.floor(now / PREVIEW_BUCKET_MS); }
     function bustPreview(url, now) {
@@ -107,7 +108,7 @@
             if (typeof StatusLine !== 'function' || typeof CoreText !== 'function') return connected;
             var notice = React.createElement(StatusLine, {testID: 'chat-reconnected-line'},
                 React.createElement(CoreText, {color: 'alt-2'}, 'チャットに再接続しました'));
-            return React.createElement(React.Fragment, null, connected, notice);
+            return React.createElement(React.Fragment, null, notice, connected);
         };
     });
 })(globalThis.__twitchPatchRuntime);
