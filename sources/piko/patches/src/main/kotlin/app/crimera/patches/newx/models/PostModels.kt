@@ -170,6 +170,33 @@ internal data class ResolvedNewXCardModels(
     val unifiedCardRawJsonField: FieldReference,
 )
 
+/**
+ * Resolves the field a generated toString appends for [label] by taking the first field read
+ * of [fieldType] that follows the label string. The shared label resolver pairs a label with
+ * the value appended right after it, which fails when the compiler outlines the append chain
+ * into helper calls: the value can be loaded before its label or passed ahead of it, as in
+ * the card models' toString methods. The append order still matches the field order, so the
+ * first read of the expected type after the label is the field the label names.
+ */
+private fun Method.fieldForToStringLabelByTypeScan(
+    label: String,
+    fieldType: String,
+): FieldReference {
+    val instructions = implementation?.instructions?.toList().orEmpty()
+    val labelIndex = instructions.indexOfFirst { instruction ->
+        instruction.getReference<StringReference>()?.string == label
+    }
+    if (labelIndex < 0) {
+        throw PatchException("NewX model label '$label' was not found in $this")
+    }
+    return instructions.drop(labelIndex + 1).firstNotNullOfOrNull { instruction ->
+        if (instruction.opcode != Opcode.IGET_OBJECT) return@firstNotNullOfOrNull null
+        instruction.getReference<FieldReference>()?.takeIf { field ->
+            field.definingClass == definingClass && field.type == fieldType
+        }
+    } ?: throw PatchException("NewX model field for '$label' in $this was not found")
+}
+
 internal data class ResolvedNewXInlineActionModels(
     val inlineActionEntryDescriptor: String,
     val inlineActionTypeField: FieldReference,
@@ -502,7 +529,18 @@ private fun resolvePostCardModels(postModels: ResolvedNewXPostModels): ResolvedN
     val legacyCardToString = legacyCardMatch.originalMethod.resolveCurrentMethod(
         "legacy card toString",
     )
-    val cardBindingsField = legacyCardToString.fieldForToStringLabel(", bindings=")
+    // The bindings value is passed ahead of its label in the compiler-outlined append chain,
+    // so the shared label resolver finds no field for ", bindings=". Resolve userRefs through
+    // it instead (its value follows its label) and take bindings by type scan, cross-checked
+    // to be a different field.
+    val legacyCardUserRefsField = legacyCardToString.fieldForToStringLabel(", userRefs=")
+    val cardBindingsField =
+        legacyCardToString.fieldForToStringLabelByTypeScan(", bindings=", LIST_DESCRIPTOR)
+    if (cardBindingsField.toString() == legacyCardUserRefsField.toString()) {
+        throw PatchException(
+            "NewX legacy card bindings and userRefs resolved to the same field",
+        )
+    }
 
     val cardBindingMatch = CardBindingModelFingerprint.requireSingle("card binding model")
     val cardBindingClass = cardBindingMatch.originalClassDef
@@ -531,18 +569,24 @@ private fun resolvePostCardModels(postModels: ResolvedNewXPostModels): ResolvedN
     val unifiedCardValueToString = unifiedCardValueMatch.originalMethod.resolveCurrentMethod(
         "unified card value toString",
     )
-    val unifiedCardTypeNameField =
-        unifiedCardValueToString.fieldForToStringLabel(", typeName=")
-    // The raw JSON is the String instance field that is not the type name; the parsed value
-    // between them is not a String, so this complement is unique.
-    val unifiedCardRawJsonField = unifiedCardValueClass.fields.singleOrNull { field ->
-        !AccessFlags.STATIC.isSet(field.accessFlags) &&
-            field.type == STRING_DESCRIPTOR &&
-            field.toString() != unifiedCardTypeNameField.toString()
-    } ?: throw PatchException(
-        "Expected one NewX unified card raw JSON field beside the type name in " +
-            unifiedCardValueClass,
+    // The type name's append is outlined into a trailing helper call, so its label does not
+    // resolve through the shared resolver either. Take the raw JSON by type scan from the
+    // first-field label and cross-check it is the class's first String instance field.
+    val unifiedCardRawJsonField = unifiedCardValueToString.fieldForToStringLabelByTypeScan(
+        "UnifiedCardValue(rawJson=",
+        STRING_DESCRIPTOR,
     )
+    val firstStringField = unifiedCardValueClass.fields.firstOrNull { field ->
+        !AccessFlags.STATIC.isSet(field.accessFlags) && field.type == STRING_DESCRIPTOR
+    }
+    if (firstStringField == null ||
+        firstStringField.toString() != unifiedCardRawJsonField.toString()
+    ) {
+        throw PatchException(
+            "NewX unified card raw JSON field is not the first String field in " +
+                unifiedCardValueClass,
+        )
+    }
 
     return ResolvedNewXCardModels(
         canonicalPostCardField = canonicalPostCardField,
