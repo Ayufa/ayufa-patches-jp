@@ -105,6 +105,39 @@ private object InlineMediaVariantModelFingerprint : Fingerprint(
     filters = listOf(string("MediaVariant(url=")),
 )
 
+private object LegacyCardModelFingerprint : Fingerprint(
+    definingClass = "Lcom/x/models/",
+    name = "toString",
+    returnType = STRING_DESCRIPTOR,
+    parameters = emptyList(),
+    filters = listOf(
+        string("LegacyCard(cardPlatform="),
+        string(", bindings="),
+    ),
+)
+
+private object CardBindingModelFingerprint : Fingerprint(
+    definingClass = "Lcom/x/models/",
+    name = "toString",
+    returnType = STRING_DESCRIPTOR,
+    parameters = emptyList(),
+    filters = listOf(
+        string("CardBinding(key="),
+        string(", value="),
+    ),
+)
+
+private object UnifiedCardValueModelFingerprint : Fingerprint(
+    definingClass = "Lcom/x/models/",
+    name = "toString",
+    returnType = STRING_DESCRIPTOR,
+    parameters = emptyList(),
+    filters = listOf(
+        string("UnifiedCardValue(rawJson="),
+        string(", typeName="),
+    ),
+)
+
 internal data class ResolvedNewXPostModels(
     val contextualPostDescriptor: String,
     val contextualCanonicalPostField: FieldReference,
@@ -118,6 +151,23 @@ internal data class ResolvedNewXPostMediaModels(
     val contextualTweetInterstitialField: FieldReference,
     val contextualMediaVisibilityResultsField: FieldReference,
     val canonicalPostMediaField: FieldReference,
+)
+
+/**
+ * Card handles for the inline download button's Ayufa-added card media support: a post's media
+ * list does not contain the video a unified card references, but the canonical post's legacy
+ * card carries the card bindings, and the unified_card binding's value keeps the raw card JSON
+ * (media entities with video variants) the extension parses.
+ */
+internal data class ResolvedNewXCardModels(
+    val canonicalPostCardField: FieldReference,
+    val legacyCardDescriptor: String,
+    val cardBindingsField: FieldReference,
+    val cardBindingDescriptor: String,
+    val cardBindingKeyField: FieldReference,
+    val cardBindingValueField: FieldReference,
+    val unifiedCardValueDescriptor: String,
+    val unifiedCardRawJsonField: FieldReference,
 )
 
 internal data class ResolvedNewXInlineActionModels(
@@ -180,6 +230,7 @@ private class PostModelResolutionState {
     private var postModelAnchors: ResolvedNewXPostModelAnchors? = null
     private var postModels: ResolvedNewXPostModels? = null
     private var postMediaModels: ResolvedNewXPostMediaModels? = null
+    private var cardModels: ResolvedNewXCardModels? = null
     private var inlineActionModels: ResolvedNewXInlineActionModels? = null
     private var inlineActionBarModels: ResolvedNewXInlineActionBarModels? = null
     private var inlineDownloadModels: ResolvedNewXInlineDownloadModels? = null
@@ -199,6 +250,11 @@ private class PostModelResolutionState {
     context(context: BytecodePatchContext)
     fun postMediaModels(): ResolvedNewXPostMediaModels = synchronized(this) {
         postMediaModels ?: resolvePostMediaModels(postModels()).also { postMediaModels = it }
+    }
+
+    context(context: BytecodePatchContext)
+    fun cardModels(): ResolvedNewXCardModels = synchronized(this) {
+        cardModels ?: resolvePostCardModels(postModels()).also { cardModels = it }
     }
 
     context(context: BytecodePatchContext)
@@ -259,6 +315,15 @@ internal val newXPostMediaModelResolutionPatch =
         }
     }
 
+internal val newXCardModelResolutionPatch =
+    patch(default = false) {
+        dependsOn(newXPostModelResolutionPatch)
+
+        execute {
+            resolvedNewXCardModels()
+        }
+    }
+
 internal val newXInlineActionModelResolutionPatch =
     patch(default = false) {
         execute {
@@ -292,6 +357,9 @@ private fun resolvedNewXPostModelAnchors(): ResolvedNewXPostModelAnchors =
 
 internal fun resolvedNewXPostModels(): ResolvedNewXPostModels =
     with(bytecodeContext) { postModelResolutionState().postModels() }
+
+internal fun resolvedNewXCardModels(): ResolvedNewXCardModels =
+    with(bytecodeContext) { postModelResolutionState().cardModels() }
 
 internal fun resolvedNewXPostMediaModels(): ResolvedNewXPostMediaModels =
     with(bytecodeContext) { postModelResolutionState().postMediaModels() }
@@ -419,6 +487,72 @@ private fun resolvePostMediaModels(postModels: ResolvedNewXPostModels): Resolved
         contextualMediaVisibilityResultsField =
             contextualPostMethod.fieldForToStringLabel(", mediaVisibilityResults="),
         canonicalPostMediaField = canonicalPostMethod.fieldForToStringLabel(", media="),
+    )
+}
+
+context(context: BytecodePatchContext)
+private fun resolvePostCardModels(postModels: ResolvedNewXPostModels): ResolvedNewXCardModels {
+    val anchors = resolvedNewXPostModelAnchors()
+    val canonicalPostMethod = anchors.canonicalPostToStringMethod.resolveCurrentMethod(
+        "canonical post toString",
+    )
+    val canonicalPostCardField = canonicalPostMethod.fieldForToStringLabel(", legacyCard=")
+
+    val legacyCardMatch = LegacyCardModelFingerprint.requireSingle("legacy card model")
+    val legacyCardToString = legacyCardMatch.originalMethod.resolveCurrentMethod(
+        "legacy card toString",
+    )
+    val cardBindingsField = legacyCardToString.fieldForToStringLabel(", bindings=")
+
+    val cardBindingMatch = CardBindingModelFingerprint.requireSingle("card binding model")
+    val cardBindingClass = cardBindingMatch.originalClassDef
+    val cardBindingToString = cardBindingMatch.originalMethod.resolveCurrentMethod(
+        "card binding toString",
+    )
+    val cardBindingValueField = cardBindingToString.fieldForToStringLabel(", value=")
+    // The key is the one remaining instance field; resolving it as the complement of the value
+    // field avoids depending on the first-field label form in the generated toString.
+    val cardBindingKeyField = cardBindingClass.fields.singleOrNull { field ->
+        !AccessFlags.STATIC.isSet(field.accessFlags) &&
+            field.toString() != cardBindingValueField.toString()
+    } ?: throw PatchException(
+        "Expected one NewX card binding key field beside the value field in $cardBindingClass",
+    )
+
+    val unifiedCardValueMatch =
+        UnifiedCardValueModelFingerprint.requireSingle("unified card value model")
+    val unifiedCardValueClass = unifiedCardValueMatch.originalClassDef
+    if (unifiedCardValueClass.superclass != cardBindingValueField.type) {
+        throw PatchException(
+            "NewX unified card value does not extend the card binding value type: " +
+                unifiedCardValueClass,
+        )
+    }
+    val unifiedCardValueToString = unifiedCardValueMatch.originalMethod.resolveCurrentMethod(
+        "unified card value toString",
+    )
+    val unifiedCardTypeNameField =
+        unifiedCardValueToString.fieldForToStringLabel(", typeName=")
+    // The raw JSON is the String instance field that is not the type name; the parsed value
+    // between them is not a String, so this complement is unique.
+    val unifiedCardRawJsonField = unifiedCardValueClass.fields.singleOrNull { field ->
+        !AccessFlags.STATIC.isSet(field.accessFlags) &&
+            field.type == STRING_DESCRIPTOR &&
+            field.toString() != unifiedCardTypeNameField.toString()
+    } ?: throw PatchException(
+        "Expected one NewX unified card raw JSON field beside the type name in " +
+            unifiedCardValueClass,
+    )
+
+    return ResolvedNewXCardModels(
+        canonicalPostCardField = canonicalPostCardField,
+        legacyCardDescriptor = legacyCardMatch.originalClassDef.type,
+        cardBindingsField = cardBindingsField,
+        cardBindingDescriptor = cardBindingClass.type,
+        cardBindingKeyField = cardBindingKeyField,
+        cardBindingValueField = cardBindingValueField,
+        unifiedCardValueDescriptor = unifiedCardValueClass.type,
+        unifiedCardRawJsonField = unifiedCardRawJsonField,
     )
 }
 
